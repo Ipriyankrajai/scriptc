@@ -23,7 +23,7 @@ import type { Lowerer } from "../lowerer.js";
 import { lowerIndexMergeHelper } from "../lower-containers.js";
 import type { IndexMergeContributor } from "../lower-containers.js";
 import { isGenericCallableMemberType } from "../../type-mapper.js";
-import { numLit, varRef } from "../../../ir/build.js";
+import { numLit, strLit, varRef } from "../../../ir/build.js";
 import { isSafeToRepeat } from "./evaluation-safety.js";
 import { tryLowerExpression } from "./try-lower-expression.js";
 import { fenceSymbolFieldCopy } from "../symbol-fields.js";
@@ -184,20 +184,6 @@ function propNameText(lowerer: Lowerer, name: ts.PropertyName): string {
   return (name as ts.Identifier | ts.StringLiteral).text;
 }
 
-/** Property-descriptor fields `name: true` for each flag name. A typed
- * loop rather than a `.map` into `as IrExpr`, so the self-hosted lowering
- * sees one record layout per field. */
-function trueDescriptorFlags(names: readonly string[], loc: SrcLoc): { key: IrExpr; value: IrExpr }[] {
-  const flags: { key: IrExpr; value: IrExpr }[] = [];
-  for (const name of names) {
-    flags.push({
-      key: { kind: "strLit", value: name, type: STRING, loc },
-      value: { kind: "dynFrom", value: { kind: "boolLit", value: true, type: BOOL, loc }, type: DYN, loc },
-    });
-  }
-  return flags;
-}
-
 /** The runtime-keyed JS object literal (a computed key that doesn't fold):
  * builds a dyn object member-by-member. Keys evaluate before their values,
  * properties in source order — JS's object-literal evaluation exactly.
@@ -224,7 +210,10 @@ export function lowerDynObjectLiteral(
       for (const field of fields) {
         const descriptor: IrExpr = { kind: "dynObjLit", type: DYN, loc, fields: [
           { key: { kind: "strLit", value: "value", type: STRING, loc }, value: field.value },
-          ...trueDescriptorFlags(["writable", "enumerable", "configurable"], loc),
+          ...["writable", "enumerable", "configurable"].map(name => ({
+            key: strLit(name, loc),
+            value: { kind: "dynFrom", value: { kind: "boolLit", value: true, type: BOOL, loc }, type: DYN, loc } as IrExpr,
+          })),
         ] };
         acc = { kind: "libCall", fn: "dyn.defineProperty", args: [acc!, lowerer.coerceToExpected(field.key, DYN), descriptor], type: DYN, loc };
       }
@@ -288,7 +277,10 @@ export function lowerDynObjectLiteral(
       const descriptor: IrExpr = {
         kind: "dynObjLit", type: DYN, loc: locOf(prop), fields: [
           { key: { kind: "strLit", value: ts.isGetAccessorDeclaration(prop) ? "get" : "set", type: STRING, loc }, value: lowerer.coerceToExpected(fn, DYN) },
-          ...trueDescriptorFlags(["enumerable", "configurable"], loc),
+          ...["enumerable", "configurable"].map(name => ({
+            key: strLit(name, loc),
+            value: { kind: "dynFrom", value: { kind: "boolLit", value: true, type: BOOL, loc }, type: DYN, loc } as IrExpr,
+          })),
         ],
       };
       acc = { kind: "libCall", fn: "dyn.defineProperty", args: [acc, lowerer.coerceToExpected(key, DYN), descriptor], type: DYN, loc };
