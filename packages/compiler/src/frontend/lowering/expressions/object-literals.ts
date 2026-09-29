@@ -184,6 +184,20 @@ function propNameText(lowerer: Lowerer, name: ts.PropertyName): string {
   return (name as ts.Identifier | ts.StringLiteral).text;
 }
 
+/** Property-descriptor fields `name: true` for each flag name. A typed
+ * loop rather than a `.map` into `as IrExpr`, so the self-hosted lowering
+ * sees one record layout per field. */
+function trueDescriptorFlags(names: readonly string[], loc: SrcLoc): { key: IrExpr; value: IrExpr }[] {
+  const flags: { key: IrExpr; value: IrExpr }[] = [];
+  for (const name of names) {
+    flags.push({
+      key: { kind: "strLit", value: name, type: STRING, loc },
+      value: { kind: "dynFrom", value: { kind: "boolLit", value: true, type: BOOL, loc }, type: DYN, loc },
+    });
+  }
+  return flags;
+}
+
 /** The runtime-keyed JS object literal (a computed key that doesn't fold):
  * builds a dyn object member-by-member. Keys evaluate before their values,
  * properties in source order — JS's object-literal evaluation exactly.
@@ -210,10 +224,7 @@ export function lowerDynObjectLiteral(
       for (const field of fields) {
         const descriptor: IrExpr = { kind: "dynObjLit", type: DYN, loc, fields: [
           { key: { kind: "strLit", value: "value", type: STRING, loc }, value: field.value },
-          ...["writable", "enumerable", "configurable"].map(name => ({
-            key: { kind: "strLit", value: name, type: STRING, loc } as IrExpr,
-            value: { kind: "dynFrom", value: { kind: "boolLit", value: true, type: BOOL, loc }, type: DYN, loc } as IrExpr,
-          })),
+          ...trueDescriptorFlags(["writable", "enumerable", "configurable"], loc),
         ] };
         acc = { kind: "libCall", fn: "dyn.defineProperty", args: [acc!, lowerer.coerceToExpected(field.key, DYN), descriptor], type: DYN, loc };
       }
@@ -277,10 +288,7 @@ export function lowerDynObjectLiteral(
       const descriptor: IrExpr = {
         kind: "dynObjLit", type: DYN, loc: locOf(prop), fields: [
           { key: { kind: "strLit", value: ts.isGetAccessorDeclaration(prop) ? "get" : "set", type: STRING, loc }, value: lowerer.coerceToExpected(fn, DYN) },
-          ...["enumerable", "configurable"].map(name => ({
-            key: { kind: "strLit", value: name, type: STRING, loc } as IrExpr,
-            value: { kind: "dynFrom", value: { kind: "boolLit", value: true, type: BOOL, loc }, type: DYN, loc } as IrExpr,
-          })),
+          ...trueDescriptorFlags(["enumerable", "configurable"], loc),
         ],
       };
       acc = { kind: "libCall", fn: "dyn.defineProperty", args: [acc, lowerer.coerceToExpected(key, DYN), descriptor], type: DYN, loc };

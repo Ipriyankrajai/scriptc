@@ -3602,15 +3602,28 @@ export class Lowerer {
       let es = 0;
       const classDispatch = new ClassDynamicDispatch();
       let dispatchChanged = !this.remainder;
+      // A function-local class lowers inside its enclosing body
+      // (lowerClassExpression caches its members there). Type mapping can
+      // collect one earlier, or in a pass that never lowers that body (the
+      // coverage remainder skips reached functions): it waits here until
+      // its body lowered, and never lowers without its lexical environment.
+      const waitingLocals: ClassInfo[] = [];
+      const readyLocal = (): number => waitingLocals.findIndex((info) => info.localClass!.ready);
       while (
         dispatchChanged ||
         ec < this.exprClasses.length ||
+        readyLocal() !== -1 ||
         gc < this.genericClassInstances.length ||
         gi < this.instantiationQueue.length ||
         es < this.emitSpecQueue.length
       ) {
+        for (let ready = readyLocal(); ready !== -1; ready = readyLocal()) {
+          functions.push(...this.lowerClassMembers(waitingLocals.splice(ready, 1)[0]!));
+        }
         while (ec < this.exprClasses.length) {
-          functions.push(...this.lowerClassMembers(this.exprClasses[ec++]!));
+          const info = this.exprClasses[ec++]!;
+          if (info.localClass && !info.localClass.ready) waitingLocals.push(info);
+          else functions.push(...this.lowerClassMembers(info));
         }
         while (gc < this.genericClassInstances.length) {
           functions.push(...this.lowerClassMembers(this.genericClassInstances[gc++]!));
