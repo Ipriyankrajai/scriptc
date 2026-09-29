@@ -3953,6 +3953,7 @@ export type IrLibFn =
   | "dyn.objKeys"
   | "dyn.forInKeys"
   | "dyn.hasOwn"
+  | "dyn.propertyIsEnumerable"
   | "dyn.assign"
   | "dyn.copyDataProperties"
   /** Variadic Object.assign over CHECKED-DYNAMIC targets (`Object.assign(
@@ -3982,6 +3983,16 @@ export type IrLibFn =
    * and deepStrictEqual's prototype gate. Never throws. Static builds
    * only; --dynamic routes Object.create through the engine instead. */
   | "dyn.objCreateNullProto"
+  | "dyn.objCreate"
+  | "dyn.objCreateWithProperties"
+  | "dyn.getPrototype"
+  | "dyn.setPrototype"
+  | "dyn.getOwnPropertyNames"
+  | "dyn.getOwnPropertyDescriptors"
+  | "dyn.preventExtensions"
+  | "dyn.isExtensible"
+  | "dyn.seal"
+  | "dyn.isSealed"
   | "dyn.objValues"
   | "dyn.objEntries"
   /** structuredClone over the checked-dynamic tree (scr_json.c): the JSON-safe subset plus
@@ -6871,7 +6882,9 @@ export function moduleUsesDynInvoke(mod: IrModule): boolean {
     }
     const node = v as { kind?: unknown; fn?: unknown };
     if (node.kind === "dynInvoke" || (node.kind === "libCall" &&
-        (node.fn === "dyn.defineProps" || node.fn === "dyn.arrayProtoCall"))) {
+        (node.fn === "dyn.defineProps" || node.fn === "dyn.defineProperty" ||
+         node.fn === "dyn.objCreateWithProperties" ||
+         node.fn === "dyn.arrayProtoCall"))) {
       found = true;
       return;
     }
@@ -7938,6 +7951,7 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "dyn.objKeys",
   "dyn.forInKeys",
   "dyn.hasOwn",
+  "dyn.propertyIsEnumerable",
   "dyn.assign",
   "dyn.copyDataProperties",
   // variadic Object.assign: spread flattening throws V8's spread-call
@@ -7945,6 +7959,16 @@ export const MAY_THROW_LIB_FNS: ReadonlySet<IrLibFn> = new Set([
   "dyn.packPushSpread",
   "dyn.packPushSpreadIter",
   "dyn.assignAll",
+  "dyn.objCreate",
+  "dyn.objCreateWithProperties",
+  "dyn.getPrototype",
+  "dyn.setPrototype",
+  "dyn.getOwnPropertyNames",
+  "dyn.getOwnPropertyDescriptors",
+  "dyn.preventExtensions",
+  "dyn.isExtensible",
+  "dyn.seal",
+  "dyn.isSealed",
   "dyn.objValues",
   "dyn.objEntries",
   "error.domClone",

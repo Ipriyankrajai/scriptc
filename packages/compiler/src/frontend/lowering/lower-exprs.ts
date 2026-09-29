@@ -4696,6 +4696,17 @@ export function lowerOptionalNumber(
       }
     }
     if (receiverIr?.kind !== "array") {
+      {
+        const receiver = tryLowerExpression(lowerer, expr.expression);
+        if (receiver?.type.kind === "func" &&
+            canBoxFuncIntoDyn(receiver.type, (id) => lowerer.shapes.get(id), (id) => lowerer.unions.get(id))) {
+          const key = lowerRecordPropertyKey(lowerer, lowerer.lowerExpr(expr.argumentExpression), expr.argumentExpression);
+          if (key.type.kind === "string") {
+            const boxed: IrExpr = { kind: "dynFrom", value: receiver, type: DYN, loc: locOf(expr.expression) };
+            return lowerer.maybeNarrow({ kind: "dynKeyGet", key, value: boxed, type: DYN, loc: locOf(expr) }, expr);
+          }
+        }
+      }
       if (receiverIr?.kind === "string") {
         // `s[i]` with a number index reads a UTF-16 code unit — charAt's
         // exact job (the UTF-16-exact runtime). Without
