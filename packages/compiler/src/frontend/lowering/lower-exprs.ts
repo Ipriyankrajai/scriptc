@@ -16,7 +16,7 @@ import { cjsClassExprWholeExportOf, cjsExportAssignmentOf, cjsExportDiscardReaso
 import { ARRAY_METHODS, builtinConstLit, builtinFenceHintOf, builtinModuleConstOf, builtinModulesArrayLit, builtinModuleFnOf, COMPOUND_ASSIGN_OPS, CompoundOp, ISLAND_SURFACE, isChildSurfaceMember, MAP_METHODS, NARROW_FIRST, SET_METHODS, STRING_INDEX_METHODS, STR_METHODS, UNSUPPORTED_EXPR, sideEffectFreeOptionValue, stdlibGlobalNameOf } from "./surfaces.js";
 import { UNSUPPORTED, blockedBindingUseDiag, requiresDynamicPackageDiag, unsupportedDiag } from "../../diagnostics/diagnostic.js";
 import { PoisonError, dynUndefinedExpr, jsFuncNameOf, neverTaintedJsType, nodeThrowExpr, own } from "./lowerer.js";
-import { lowerMapSpread, lowerNpmStaticSafeIndexRead, lowerSafeIndexRead, strCharsCall, tryLowerNumericIndexRead } from "./lower-containers.js";
+import { lowerCollectionSpread, lowerNpmStaticSafeIndexRead, lowerSafeIndexRead, strCharsCall, tryLowerNumericIndexRead } from "./lower-containers.js";
 import { arrayValueRead, arrayValueStore } from "./array-values.js";
 import { lowerOptionalStringIndex } from "./string-index.js";
 import { tryLowerIndexedComparison } from "./indexed-comparison.js";
@@ -365,6 +365,13 @@ function lowerExprInner(lowerer: Lowerer, expr: ts.Expression): IrExpr {
               return !sf.isDeclarationFile && !sf.fileName.includes("/node_modules/");
             });
           if (projectDeclared) {
+            // A spread already stored in the island must copy there too.
+            // Later overrides can make the literal's own inferred shape
+            // appear static without making that source a native record.
+            if (ts.isObjectLiteralExpression(expr) && expr.properties.some((p) =>
+              ts.isSpreadAssignment(p) && lowerer.mapTypeOf(lowerer.typeOf(p.expression))?.kind === "jsval")) {
+              return true;
+            }
             const own = lowerer.mapTypeOf(lowerer.typeOf(expr));
             if (own?.kind === "record" || own?.kind === "array") return false;
           }
@@ -3595,7 +3602,8 @@ function lowerPromiseThenPresence(
     }
     if (kind === "map") {
       if (name === "size") {
-        const receiver = lowerer.lowerExpr(expr.expression);
+        const expected = lowerer.mapTypeOf(lowerer.typeOf(expr.expression));
+        const receiver = expected?.kind === "map" ? strictReceiver(expected) : lowerer.lowerExpr(expr.expression);
         return { kind: "mapIntrinsic", method: "size", receiver, args: [], type: F64, loc: locOf(expr) };
       }
       if (MAP_METHODS.has(name) || name === "forEach") {
@@ -3605,7 +3613,8 @@ function lowerPromiseThenPresence(
     }
     if (kind === "set") {
       if (name === "size") {
-        const receiver = lowerer.lowerExpr(expr.expression);
+        const expected = lowerer.mapTypeOf(lowerer.typeOf(expr.expression));
+        const receiver = expected?.kind === "set" ? strictReceiver(expected) : lowerer.lowerExpr(expr.expression);
         return { kind: "setIntrinsic", method: "size", receiver, args: [], type: F64, loc: locOf(expr) };
       }
       if (SET_METHODS.has(name)) {
@@ -3920,20 +3929,7 @@ function lowerPromiseThenPresence(
           (ts.isConditionalExpression(srcNode)
             ? lowerTernary(lowerer, srcNode, type)
             : lowerer.lowerExpr(el.expression));
-        src = lowerMapSpread(lowerer, src, el.expression) ?? src;
-        // `[...someSet]`: a same-element Set drains into a fresh array in
-        // insertion order (setIntrinsic toArray); the spread machinery
-        // then copies like any array source.
-        if (src.type.kind === "set" && typeEquals(src.type.elem, type.elem)) {
-          src = {
-            kind: "setIntrinsic",
-            method: "toArray",
-            receiver: src,
-            args: [],
-            type: arrayOf(src.type.elem),
-            loc: locOf(el),
-          };
-        }
+        src = lowerCollectionSpread(lowerer, src, el.expression) ?? src;
         // `[...new SymbolIterator]`: a CLASS ITERABLE drains through its
         // own protocol into a fresh element array (classIteratorDrainCall
         // — an infinite iterator loops forever, exactly Node), and the
@@ -4386,6 +4382,17 @@ export function lowerOptionalNumber(
         // read rides engine ops, exiting at the declared per-index type
         // like the array path.
         if (obj.type.kind === "jsval") return islandElementRead(lowerer, expr, obj);
+        if (obj.type.kind === "dyn") {
+          // Object.entries over a checked value stores each pair in the
+          // dynamic tree even when the checker names a tuple type.
+          const key = lowerRecordPropertyKey(lowerer, lowerer.lowerExpr(expr.argumentExpression), expr.argumentExpression);
+          const optional = hasOptionalChainGuard(expr.expression);
+          return lowerer.maybeNarrow({
+            kind: "dynKeyGet", value: obj, key,
+            ...(optional ? { optional: true as const } : {}),
+            type: DYN, loc: locOf(expr),
+          }, expr);
+        }
         if (obj.type.kind === "union" && lowerer.armTag(obj.type.unionId, UNDEFINED_T) >= 0) {
           // The checker sees the outer `arrays[i]` as a tuple when
           // noUncheckedIndexedAccess is disabled, but the lowered read is

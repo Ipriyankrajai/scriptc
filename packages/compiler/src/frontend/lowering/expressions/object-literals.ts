@@ -652,6 +652,14 @@ export function lowerObjectLiteral(lowerer: Lowerer, expr: ts.ObjectLiteralExpre
     tsType = lowerer.checker.getAwaitedType(tsType) ?? tsType;
   }
   let mapped = lowerer.mapTypeOf(tsType);
+  // A checked-dynamic source has runtime keys even when later explicit
+  // fields make the literal's inferred type look like a fixed record.
+  // Keep a checked-dynamic destination in that representation so copying
+  // preserves keys, evaluation order, and fields overwritten afterwards.
+  if (mapped?.kind === "dyn" && expr.properties.some((p) =>
+    ts.isSpreadAssignment(p) && lowerer.mapTypeOf(lowerer.typeOf(p.expression))?.kind === "dyn")) {
+    return lowerDynObjectLiteral(lowerer, expr);
+  }
   // A JavaScript call can contextually type an object literal as string even
   // though the literal itself is a record. Keep its own shape so a caller
   // performing ToString can convert it after the value is built.
@@ -713,7 +721,11 @@ export function lowerObjectLiteral(lowerer: Lowerer, expr: ts.ObjectLiteralExpre
   // gate DECLINED it (a project-declared typedef that absorbed to the
   // island through checker-`any` field residue): the literal builds at
   // its own type like every unmappable context.
-  if (mapped === null || mapped.kind === "union" || mapped.kind === "dyn" || mapped.kind === "object" || mapped.kind === "jsval") {
+  // An index-signature literal can inherit a callable contextual type for
+  // a prototype-named DATA property (notably `toString`). Object literals
+  // have no call signature; construct their own data shape and let the
+  // surrounding assignment/assertion enforce the destination contract.
+  if (mapped === null || mapped.kind === "union" || mapped.kind === "dyn" || mapped.kind === "object" || mapped.kind === "jsval" || mapped.kind === "func") {
     const ctxUnion = mapped?.kind === "union" ? mapped : null;
     mapped = lowerer.mapTypeOf(lowerer.typeOf(expr)) ?? mapped;
     // A literal whose own shape re-tags into NO arm of the contextual
