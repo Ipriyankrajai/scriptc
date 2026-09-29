@@ -22,6 +22,73 @@ static ScrDyn *nothing(ScrClosure *closure, ScrDyn *const *args, size_t argc) {
 
 int main(void) {
   scr_init();
+  /* Native Set boxes may own headerless scalar/string maps. Collecting an
+   * enclosing cycle must neither trace those leaves nor skip their release. */
+  for (int i = 0; i < 2000; i++) {
+#ifdef SCR_RC_AUDIT
+    long before_maps = scr_map_live_count();
+    long before_dyns = scr_dyn_live_count();
+#endif
+    ScrMap *numbers = scr_map_new(SCR_MAP_KEY_F64, SCR_MAP_VAL_F64, NULL, NULL, NULL);
+    ScrMap *strings = scr_map_new(SCR_MAP_KEY_STR, SCR_MAP_VAL_F64, NULL, NULL, NULL);
+    scr_map_set_f64_f64(numbers, 42, 1);
+    ScrStr *text = scr_str_new("kept", 4);
+    scr_map_set_str_f64(strings, text, 1);
+    scr_str_release(text);
+    ScrDyn *object = scr_dyn_new_obj();
+    scr_dyn_obj_set(object, "numbers", 7, scr_dyn_native_set(numbers));
+    scr_dyn_obj_set(object, "strings", 7, scr_dyn_native_set(strings));
+    scr_dyn_obj_set(object, "self", 4, scr_dyn_retain(object));
+    scr_map_release(strings); /* only the box owns this leaf */
+    scr_dyn_release(object);
+    scr_collect_cycles();
+    assert(numbers->rc == 1 && scr_map_has_f64(numbers, 42));
+    scr_map_release(numbers);
+#ifdef SCR_RC_AUDIT
+    assert(scr_map_live_count() == before_maps);
+    assert(scr_dyn_live_count() == before_dyns);
+#endif
+  }
+  /* A live alias survives collection; dropping it releases the entire
+   * object/closure/capture cycle, including its acyclic string leaf. */
+  for (int i = 0; i < 2000; i++) {
+#ifdef SCR_RC_AUDIT
+    long before = scr_dyn_live_count();
+#endif
+    ScrDyn *object = scr_dyn_new_obj();
+    ScrClosure *closure = scr_closure_new(NULL, 1);
+    closure->caps[0] = scr_box_new_obj(scr_dyn_retain_v, scr_dyn_release_v, scr_dyn_trace_v);
+    scr_box_set_ref(closure->caps[0], scr_dyn_retain(object));
+    ScrDyn *callback = scr_dyn_new_func(closure, nothing, 0, "func()=>dyn", "read");
+    scr_dyn_obj_set(object, "read", 4, callback);
+    ScrStr *text = scr_str_new("alive", 5);
+    scr_dyn_obj_set(object, "text", 4, scr_dyn_new_str(text));
+    scr_str_release(text);
+    ScrDyn *alias = scr_dyn_retain(object);
+    scr_dyn_release(object);
+    scr_collect_cycles();
+    assert(scr_dyn_obj_get(alias, "text", 4)->v.str->len == 5);
+    scr_dyn_release(alias);
+    scr_collect_cycles();
+#ifdef SCR_RC_AUDIT
+    assert(scr_dyn_live_count() == before);
+#endif
+  }
+  /* A checked bigint owns its payload independently of the producing slot. */
+  for (int i = 0; i < 2000; i++) {
+    ScrStr *decimal = scr_str_new("18446744073709551615", 20);
+    ScrBigInt *integer = scr_bigint_parse(decimal);
+    ScrDyn *boxed = scr_dyn_new_bigint(integer);
+    scr_bigint_release(integer);
+    ScrDyn *copy = scr_dyn_new_bigint(boxed->v.bigint);
+    assert(scr_dyn_strict_eq(boxed, copy) && scr_dyn_truthy(copy));
+    scr_dyn_release(boxed);
+    ScrStr *rendered = scr_dyn_to_string(copy, NULL);
+    assert(scr_str_eq(decimal, rendered));
+    scr_str_release(decimal);
+    scr_str_release(rendered);
+    scr_dyn_release(copy);
+  }
   ScrDyn *snapshot = scr_dyn_mark_snapshot(scr_dyn_new_obj());
   scr_dyn_release(snapshot);
   ScrDyn *fresh = scr_dyn_new_obj();
