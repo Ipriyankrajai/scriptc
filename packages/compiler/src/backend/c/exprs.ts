@@ -4449,6 +4449,8 @@ function emitDynamicLibCall(state: LibCallState): Temp {
             return finish(`scr_dyn_define_property(${arg(0)}, ${arg(1)}, ${arg(2)})`);
           case "dyn.getOwnPropertyDescriptor":
             return finish(`scr_dyn_get_own_property_descriptor(${arg(0)}, ${arg(1)})`);
+          case "dyn.arrayProtoCall":
+            return finish(`scr_dyn_array_proto_call(${arg(0)}, ${arg(1)}, ${arg(2)})`);
           case "dyn.hasKey":
             // `k in v` with a runtime key: the dyn presence answer (both
             // borrowed, no allocation, never throws).
