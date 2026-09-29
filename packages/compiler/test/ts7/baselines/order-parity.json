@@ -11577,6 +11577,42 @@
     "<repo>/tests/corpus/primitive-and-function-descriptors.js"
    ],
    "diags": []
+  },
+  "<repo>/tests/corpus/3068-url-checked-identity.ts": {
+   "order": [
+    "<repo>/tests/corpus/3068-url-checked-identity.ts"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/3069-set-checked-seed.js": {
+   "order": [
+    "<repo>/tests/corpus/3069-set-checked-seed.js"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/3070-checked-object-accessors.js": {
+   "order": [
+    "<repo>/tests/corpus/3070-checked-object-accessors.js"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/3071-checked-specialization-narrowing.js": {
+   "order": [
+    "<repo>/tests/corpus/3071-checked-specialization-narrowing.js"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/3072-weak-process-streams.js": {
+   "order": [
+    "<repo>/tests/corpus/3072-weak-process-streams.js"
+   ],
+   "diags": []
+  },
+  "<repo>/tests/corpus/3073-optional-callable-module.js": {
+   "order": [
+    "<repo>/tests/corpus/3073-optional-callable-module.js"
+   ],
+   "diags": []
   }
  }
 }

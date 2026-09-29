@@ -1012,6 +1012,9 @@ export function jsFuncNameOf(node: ts.Node): string | null {
   return null;
 }
 
+/** Scalar kinds a typeof narrow may take a checked-dynamic binding to. */
+const DYN_SCALAR_NARROWS: ReadonlySet<IrType["kind"]> = new Set(["f64", "string", "bool", "bigint"]);
+
 export class Lowerer {
   readonly frontendServices: FrontendServices | undefined;
   readonly checker: ts.TypeChecker;
@@ -4799,9 +4802,13 @@ export class Lowerer {
         if (narrowedIr === null || boundIr === null) return bound;
         if (typeEquals(narrowedIr, boundIr)) return t;
         // A checked value can contain any runtime kind. A checker-proven
-        // branch narrow therefore cannot contradict this specialization;
-        // reads still validate the payload through maybeNarrow.
-        if (boundIr.kind === "dyn") return t;
+        // typeof narrow to a scalar therefore cannot contradict this
+        // specialization; reads still validate the payload through
+        // maybeNarrow. Structured narrows (a JSDoc `Promise|undefined`
+        // param after a `?.then` guard) keep the checked binding: the
+        // value is still dyn, and lowering it as the declared structure
+        // loses its methods.
+        if (boundIr.kind === "dyn" && DYN_SCALAR_NARROWS.has(narrowedIr.kind)) return t;
         // A union binding narrowed to one of its arms (typeof/equality
         // guards over string|number bindings) — the narrow is truth.
         if (boundIr.kind === "union") {
